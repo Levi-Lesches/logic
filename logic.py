@@ -497,28 +497,6 @@ def parse_premise(sentence, is_negative = None):
 
 
 if __name__ == '__main__':
-	TESTS = [
-		"A",
-		"~A",
-		"A V B",
-		"B --> C",
-		"~A V B",
-		"~(A V B)",
-		"(A --> B) V C",
-		"A V (B --> C)",
-		"(A V B) --> (C V D)",
-		"~(A V B) ^ (C V D)",
-		"(A V B) ^ ~(C V D)",
-		"~(A V B) ^ ~(C V D)",
-		"~(~(A V B) ^ ~(C V D))",
-	]
-
-	assert all(
-		str(parse_premise(test)) == test
-		for test in TESTS 
-	)
-	
-
 	# premises: [Premise] = []
 	# n = veripy (int, "How many premises are there?")
 	# for _ in range (n): premises.append (
