@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 from abc import ABC as AbstractClass, abstractmethod
+import regex as re  # cannot use the built-in re because we need (?R)
 
 from my_stuff.misc import init, veripy
 from my_stuff.lists import find_in_list
@@ -462,72 +463,62 @@ def prove (prems: [Premise], target: Premise) -> str:
 		for index in range (len (result))
 	]) + "\nQ.E.D"
 
-operators = ("^", "V", "-->")
+regex = re.compile(r"(~?)\(?([^\(\)\n]+)\)? ([V^]|-->) (~?)\(?([^\(\)\n]+)\)?")
+regex_has_parens = re.compile(r"~\(([^()]|(?R))+\)")
+operator_types = {
+	"^": Conjunction, 
+	"V": Disjunction,
+	"-->": Conditional,
+}
 
-def consume_operator (sentence, starting_index, forward: bool = True) -> (str, int): 
-	result = ""
-	index = starting_index
-	while True:
-		try: letter = sentence [index] 
-		except IndexError: break
-		else: 
-			if not letter.isspace(): result += letter
-			if result in operators: return result, index
-		index += 1 if forward else -1
-	return None
-
-def findfrom_input (sentence):
-	assert type (sentence) is str, f"findfrom_input exptected string, got {type (sentence)}"
-	sentence = sentence.strip() #cleanup!
-	# handle atomic sentences
-	if len (sentence.split()) == 1: return Symbol (sentence)
-
-	classes = (Conjunction, Disjunction, Conditional)
-	matches = {op : cls for op, cls in zip (operators, classes)}
-
-	positive = True
-	words = [None] * 3
+def parse_premise(sentence, is_negative = None): 
 	if (
-		sentence.startswith ("(") and 
-		find_closing_paren (sentence, 0) == len (sentence) - 1
-	):
-		positive = True
-		sentence = sentence [1:-1]
-	if (
-			sentence.startswith ("~(") and 
-			find_closing_paren (sentence, 1) == len (sentence) - 1
-	): #whole thing is positive
-		positive = False
-		sentence = sentence [2:-1]
-	if sentence.startswith ("(") or sentence.startswith ("~("): 
-		start_index = int (sentence.startswith ("~(")) # 1 else 0
-		end_index = find_closing_paren (sentence, start_index) + 1
-		words [0] = sentence [:end_index]
-		operator, op_index = consume_operator (sentence, end_index)
-		words [1] = operator
-		words [2] = sentence [op_index + 1:].strip()
-	elif sentence.endswith (")"):
-		start_index = get_opening_paren (sentence, len (sentence) - 1) - 1
-		words [2] = sentence [start_index:]
-		operator, op_index = consume_operator (sentence, start_index, forward = False)
-		words [1] = operator
-		words [0] = sentence [:op_index - 1].strip()
+		is_negative is None  # haven't recursed yet
+		# The entire sentence is of the form ~( ), so we parse the inside
+		and regex_has_parens.fullmatch(sentence) is not None
+	): return parse_premise(sentence [2: len(sentence) - 1], True)
 
-	if not any (words): words = sentence.split()
-
-	part1, operator, part2 = words
-
-	try: part1 = findfrom_input (part1)
-	except: raise SyntaxError (f"Cannot parse {part1}.") from None
-	try: part2 = findfrom_input (part2)
-	except: raise SyntaxError (f"Cannot parse {part2}.") from None
-	return matches [operator] (
-		part1,
-		part2,
-		positive
+	if (" " not in sentence):  # just a symbol, no need to parse 
+		if is_negative: 
+			sentence = "~" + sentence
+		return Symbol(sentence)
+	match = regex.match(sentence)
+	operator = match.group(3)
+	left = match.group(2)
+	right = match.group(5)
+	is_left_negative = match.group(1) == "~"
+	is_right_negative = match.group(4) == "~"
+	premise_type = operator_types [operator]
+	return premise_type(
+		parse_premise(left, is_left_negative),
+		parse_premise(right, is_right_negative),
+		not is_negative
 	)
 
+
 if __name__ == '__main__':
+	TESTS = [
+		"A",
+		"~A",
+		"A V B",
+		"B --> C",
+		"~A V B",
+		"~(A V B)",
+		"(A --> B) V C",
+		"A V (B --> C)",
+		"(A V B) --> (C V D)",
+		"~(A V B) ^ (C V D)",
+		"(A V B) ^ ~(C V D)",
+		"~(A V B) ^ ~(C V D)",
+		"~(~(A V B) ^ ~(C V D))",
+	]
+
+	assert all(
+		str(parse_premise(test)) == test
+		for test in TESTS 
+	)
+	
+
 	# premises: [Premise] = []
 	# n = veripy (int, "How many premises are there?")
 	# for _ in range (n): premises.append (
@@ -537,6 +528,7 @@ if __name__ == '__main__':
 	# 		)
 	# 	)
 	# )
+	# print(f"RECEIVED: {premises}")
 	# target = findfrom_input (
 	# 	input (
 	# 		"What are you trying to prove? "
@@ -548,22 +540,21 @@ if __name__ == '__main__':
 
 
 
-	PREMISES: [Premise] = [
-		Conditional (Symbol ("~d"), Symbol ("~b")),
-		Conditional (Symbol ("~x"), Symbol ("~c")),
-		Conditional (
-			Disjunction (Symbol ("~b"), Symbol ("h")),
-			Disjunction (Symbol ("q"), Symbol ("r"))
-		),
-	
-		Conjunction (Symbol ("~c"), Symbol ("d"), positive = False),
-		Conjunction (Symbol ("d"), Symbol ("~b")),
-	
-		Symbol ("~r"),
-		Symbol ("~q"),
+	PREMISES = [
+		parse_premise("~x --> ~c"),
+		parse_premise("~(~c ^ d)"),
+		parse_premise("d ^ ~b"),
 	]
-	
-	
-	TARGET = Symbol ("x")
+	TARGET = parse_premise("x")
+	print (prove (PREMISES, TARGET))
+	input("Press Enter to see the next proof...")
+	print()
+
+	PREMISES = [
+		parse_premise("P ^ Q"),
+		parse_premise("P --> ~(Q ^ R)"),
+		parse_premise("S --> R"),
+	]
+	TARGET = parse_premise("~S")	
 	
 	print (prove (PREMISES, TARGET))
